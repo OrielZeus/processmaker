@@ -30,10 +30,10 @@ class ScriptMicroserviceService
             $this->client = Http::withOptions([
                 'verify' => !App::environment('local'),
             ])->baseUrl(config('script-runner-microservice.base_url'))
-            ->withToken($this->getAccessToken())
-            ->accept('application/json')
-            ->contentType('application/json')
-            ->throw();
+                ->withToken($this->getAccessToken())
+                ->accept('application/json')
+                ->contentType('application/json')
+                ->throw();
         }
 
         return $this->client;
@@ -142,7 +142,7 @@ class ScriptMicroserviceService
         return $jsonResponse;
     }
 
-    public function getAccessToken()
+    public function getAccessToken(): string
     {
         if (Cache::has('keycloak.access_token')) {
             return Cache::get('keycloak.access_token');
@@ -156,41 +156,45 @@ class ScriptMicroserviceService
             'password' => config('script-runner-microservice.keycloak.password'),
         ]);
 
-        if ($response->successful()) {
-            Cache::put('keycloak.access_token', $response->json()['access_token'], $response->json()['expires_in'] - 60);
-        }
-
         $responseJson = $response->json();
 
-        return $responseJson['access_token'];
+        if ($response->successful() && isset($responseJson['access_token'])) {
+            // store with a small buffer before expiration
+            Cache::put('keycloak.access_token', $responseJson['access_token'], max(60, ($responseJson['expires_in'] ?? 3600) - 60));
+
+            return $responseJson['access_token'];
+        }
+
+        Log::error('Failed to obtain access token', ['status' => $response->status(), 'body' => $responseJson]);
+        throw new \RuntimeException('Unable to obtain access token from Keycloak');
     }
 
-    public function getScriptRunner($language, $executorUuid, $custom = false)
+    public function getScriptRunner(string $language, string $executorUuid, bool $custom = false): array
     {
-        $uri = !$custom ?
-            '/scripts' :
-            '/custom/' . $this->getInstanceUuid() . '/scripts';
+        $cacheKey = $custom
+            ? ('script-runner-microservice.custom-script-runner.' . $executorUuid)
+            : ('script-runner-microservice.script-runner.' . $language);
 
-        if (!$custom && Cache::has('script-runner-microservice.script-runner')) {
-            return Cache::get('script-runner-microservice.script-runner.' . $language);
-        } elseif ($custom && Cache::has('script-runner-microservice.custom-script-runner.' . $executorUuid)) {
-            return Cache::get('script-runner-microservice.custom-script-runner.' . $executorUuid);
+        if (Cache::has($cacheKey)) {
+            Log::debug('Cache hit for script runner', ['cacheKey' => $cacheKey]);
+            return Cache::get($cacheKey);
         }
 
-        $response = $this->client()
-            ->get($uri)->collect();
+        $uri = !$custom ? '/scripts' : '/custom/' . $this->getInstanceUuid() . '/scripts';
 
-        $result = $response->filter(function ($item) use ($language, $executorUuid, $custom) {
-            return !$custom ?
-                $item['language'] == $language :
-                $item['language'] === $language && $item['id'] === $executorUuid;
+        $responseCollection = $this->client()
+            ->get($uri)
+            ->collect();
+
+        $result = $responseCollection->filter(function ($item) use ($language, $executorUuid, $custom) {
+            if (!$custom) {
+                return isset($item['language']) && $item['language'] === $language;
+            }
+
+            return isset($item['language'], $item['id']) && $item['language'] === $language && $item['id'] === $executorUuid;
         })->first();
 
-        if (!$custom) {
-            Cache::put('script-runner-microservice.script-runner.' . $language, $result, now()->addHour());
-        } else {
-            Cache::put('script-runner-microservice.custom-script-runner.' . $executorUuid, $result, now()->addHour());
-        }
+        Cache::put($cacheKey, $result, now()->addHour());
 
         return $result;
     }
