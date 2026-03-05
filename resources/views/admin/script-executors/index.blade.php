@@ -19,7 +19,6 @@
         <div class="card card-body">
             <script-executors
                     :script_microservice_enabled="{{$script_microservice_enabled}}"
-                    :script_microservice_instance_uuid="'{{$script_microservice_instance_uuid}}'"
             ></script-executors>
         </div>
     </div>

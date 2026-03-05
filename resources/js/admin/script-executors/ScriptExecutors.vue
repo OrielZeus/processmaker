@@ -245,7 +245,6 @@ export default {
     "filter",
     "permission",
     "script_microservice_enabled",
-    "script_microservice_instance_uuid",
   ],
   data() {
     return {
@@ -264,6 +263,7 @@ export default {
       exitCode: 0,
       showDockerfile: false,
       loading: true,
+      script_microservice_broadcast_uui: null,
 
       localLoadOnStart: true,
       orderBy: "language",
@@ -342,33 +342,16 @@ export default {
           }
         }
       );
-    } else if (this.script_microservice_enabled) {
-      window.Echo
-        .channel(`build-image-${this.script_microservice_instance_uuid}`)
-        .listenToAll((eventName, data) => {
-          this.status = this.status === "idle" ? "starting" : this.status;
-          switch (eventName) {
-            case ".build-image":
-              this.output(`${data}\n`);
-              break;
-            case ".build-finished":
-              this.pidFile = null;
-              this.exitCode = 0;
-              this.status = "done";
-              break;
-            case ".build-error":
-              this.output(data);
-              this.pidFile = null;
-              this.exitCode = 1;
-              this.status = "done";
-              break;
-          }
-        });
     }
   },
   watch: {
     commandOutput() {
       this.scrollToBottom();
+    },
+    script_microservice_broadcast_uui(newVal) {
+      if (newVal) {
+        this.subscribeToScriptMicroserviceChannel(newVal);
+      }
     },
   },
   computed: {
@@ -482,6 +465,7 @@ export default {
           .put(path, this.formData)
           .then((result) => {
             this.status = _.get(result, "data.status", "error");
+            this.script_microservice_broadcast_uui = result.data.uuid;
           })
           .catch((e) => {
             this.setErrors(e);
@@ -492,6 +476,7 @@ export default {
           .post(path, this.formData)
           .then((result) => {
             this.status = _.get(result, "data.status", "error");
+            this.script_microservice_broadcast_uui = result.data.uuid;
             if (this.status === "started") {
               this.formData.id = result.data.id;
               this.fetch(); // refresh the table (beneath the modal)
@@ -551,6 +536,33 @@ export default {
     },
     onAddToBundle(data) {
       this.$root.$emit('add-to-bundle', data);
+    },
+    subscribeToScriptMicroserviceChannel(name) {
+      const channel = `build-image-${name}`;
+      if (this.script_microservice_enabled) {
+      // Subscribe to new channel
+        window.ScriptMicroserviceEcho
+          .channel(channel)
+          .listenToAll((eventName, data) => {
+            this.status = this.status === "idle" ? "starting" : this.status;
+            switch (eventName) {
+              case ".build-image":
+                this.output(`${data}\n`);
+                break;
+              case ".build-finished":
+                this.pidFile = null;
+                this.exitCode = 0;
+                this.status = "done";
+                break;
+              case ".build-error":
+                this.output(data);
+                this.pidFile = null;
+                this.exitCode = 1;
+                this.status = "done";
+                break;
+            }
+          });
+      }
     },
   },
 };

@@ -35,6 +35,8 @@ import FilterTable from "./components/shared/FilterTable.vue";
 import PaginationTable from "./components/shared/PaginationTable.vue";
 import PMDropdownSuggest from "./components/PMDropdownSuggest";
 import "@processmaker/screen-builder/dist/vue-form-builder.css";
+import Echo from "laravel-echo";
+import Pusher from "pusher-js";
 
 window.__ = translator;
 window._ = require("lodash");
@@ -348,6 +350,15 @@ if (window.Processmaker && window.Processmaker.broadcasting) {
   }
 
   window.Echo = new TenantAwareEcho(config);
+}
+
+if (window.Processmaker && window.Processmaker.script_microservice && window.Processmaker.script_microservice.enabled) {
+  const config = window.Processmaker.script_microservice.broadcasting;
+
+  window.ScriptMicroserviceEcho = new Echo({
+    ...config,
+    client: new Pusher(config.key, config),
+  });
 }
 
 if (userID) {

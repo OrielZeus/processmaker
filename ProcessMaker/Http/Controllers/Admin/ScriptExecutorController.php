@@ -17,7 +17,6 @@ class ScriptExecutorController extends Controller
         return view('admin.script-executors.index',
             [
                 'script_microservice_enabled' => config('script-runner-microservice.enabled'),
-                'script_microservice_instance_uuid' => $service->getInstanceUuid(),
             ]);
     }
 }

@@ -127,7 +127,7 @@ class ScriptExecutorController extends Controller
             $service->createCustomExecutor($scriptExecutor);
         }
 
-        return ['status' => 'started', 'id' => $scriptExecutor->id];
+        return ['status' => 'started', 'uuid' => $scriptExecutor->uuid, 'id' => $scriptExecutor->id];
     }
 
     /**
@@ -197,7 +197,7 @@ class ScriptExecutorController extends Controller
             $service->updateCustomExecutor($scriptExecutor);
         }
 
-        return ['status' => 'started'];
+        return ['status' => 'started', 'uuid' => $scriptExecutor->uuid];
     }
 
     /**
