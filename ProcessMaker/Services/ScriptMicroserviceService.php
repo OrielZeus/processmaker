@@ -2,6 +2,7 @@
 
 namespace ProcessMaker\Services;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Http\Client\RequestException;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\App;
@@ -39,7 +40,7 @@ class ScriptMicroserviceService
         return $this->client;
     }
 
-    private function checkTenant()
+    private function checkTenant(): void
     {
         if ($this->tenantChecked) {
             return;
@@ -70,6 +71,10 @@ class ScriptMicroserviceService
         $this->tenantChecked = true;
     }
 
+    /**
+     * @throws RequestException
+     * @throws ConnectionException
+     */
     public function createCustomExecutor(ScriptExecutor $scriptExecutor)
     {
         $url = '/custom/' . $this->getInstanceUuid() . '/scripts';
@@ -93,6 +98,10 @@ class ScriptMicroserviceService
         return $jsonResponse;
     }
 
+    /**
+     * @throws RequestException
+     * @throws ConnectionException
+     */
     public function updateCustomExecutor(ScriptExecutor $scriptExecutor)
     {
         $this->checkTenant();
@@ -128,13 +137,15 @@ class ScriptMicroserviceService
         }
     }
 
+    /**
+     * @throws ConnectionException
+     */
     public function deleteCustomExecutor($scriptExecutorUUID)
     {
         $url = '/custom/scripts/' . $scriptExecutorUUID;
         Log::debug('Deleting custom script executor.', ['url' => $url]);
 
-        $response = $this->client()
-            ->delete($url);
+        $response = $this->client()->delete($url);
 
         $jsonResponse = $response->json();
         Log::debug('Response', ['response' => $jsonResponse]);
@@ -142,6 +153,9 @@ class ScriptMicroserviceService
         return $jsonResponse;
     }
 
+    /**
+     * @throws ConnectionException
+     */
     public function getAccessToken(): string
     {
         if (Cache::has('keycloak.access_token')) {
@@ -160,7 +174,7 @@ class ScriptMicroserviceService
 
         if ($response->successful() && isset($responseJson['access_token'])) {
             // store with a small buffer before expiration
-            Cache::put('keycloak.access_token', $responseJson['access_token'], max(60, ($responseJson['expires_in'] ?? 3600) - 60));
+            Cache::put('keycloak.access_token', $responseJson['access_token'], max(60, ($responseJson['expires_in'] ?? 1800) - 60));
 
             return $responseJson['access_token'];
         }
@@ -169,7 +183,10 @@ class ScriptMicroserviceService
         throw new \RuntimeException('Unable to obtain access token from Keycloak');
     }
 
-    public function getScriptRunner(string $language, string $executorUuid, bool $custom = false): array
+    /**
+     * @throws ConnectionException
+     */
+    public function getScriptRunner(string $language, string $executorUuid, bool $custom = false): array|null
     {
         $cacheKey = $custom
             ? ('script-runner-microservice.custom-script-runner.' . $executorUuid)
@@ -182,23 +199,25 @@ class ScriptMicroserviceService
 
         $uri = !$custom ? '/scripts' : '/custom/' . $this->getInstanceUuid() . '/scripts';
 
-        $responseCollection = $this->client()
+        $result = $this->client()
             ->get($uri)
-            ->collect();
+            ->collect()
+            ->filter(function ($item) use ($language, $executorUuid, $custom) {
+                if (!$custom) {
+                    return isset($item['language']) && $item['language'] === $language;
+                }
 
-        $result = $responseCollection->filter(function ($item) use ($language, $executorUuid, $custom) {
-            if (!$custom) {
-                return isset($item['language']) && $item['language'] === $language;
-            }
+                return isset($item['language'], $item['id']) && $item['language'] === $language && $item['id'] === $executorUuid;
+            })->first();
 
-            return isset($item['language'], $item['id']) && $item['language'] === $language && $item['id'] === $executorUuid;
-        })->first();
-
-        Cache::put($cacheKey, $result, now()->addHour());
+        if (!empty($result)) Cache::put($cacheKey, $result, now()->addHour());
 
         return $result;
     }
 
+    /**
+     * @throws ConnectionException
+     */
     public function sendScriptPayload($payload)
     {
         $uri = '/requests/create';
@@ -211,7 +230,7 @@ class ScriptMicroserviceService
             ->post($uri, $payload);
     }
 
-    public function handle(Request $request)
+    public function handle(Request $request): void
     {
         $response = $request->all();
         Log::debug('Response microservice executor: ' . print_r($response, true));
